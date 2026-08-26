@@ -1602,11 +1602,18 @@ def branch_review_employee_stats():
             ex_df['clean_rub'] = ex_df[ex_rub_col].astype(str).str.strip()
             ex_df['clean_score'] = ex_df[ex_score_col].apply(clean_val)
 
-            # İl üzrə rübləri bir sətirdə birləşdiririk: "2025: Q1 25% Q2 30% Q3 35% Q4 50%"
+            # İl üzrə rübləri Q1-dən Q4-ə qədər sıralayıb ayrıca HTML sətrinə çeviririk
             def group_quarters(group):
+                quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+                group = group.sort_values(
+                    by='clean_rub',
+                    key=lambda values: values.map(
+                        lambda value: quarter_order.get(str(value).strip().upper(), 99)
+                    )
+                )
                 q_list = [f"{row['clean_rub']} {row['clean_score']}" for _, row in group.iterrows()]
                 yr = group['clean_yr'].iloc[0]
-                return f"<div style='margin-bottom:2px;'><strong>{yr}:</strong> {' '.join(q_list)}</div>"
+                return f"<div><strong>{yr}:</strong> {' '.join(q_list)}</div>"
 
             year_grouped = ex_df.groupby([ex_emp_col, 'clean_yr']).apply(group_quarters).reset_index(name='Year_Line')
 

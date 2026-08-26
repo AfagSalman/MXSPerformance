@@ -1,9 +1,21 @@
+from pathlib import Path
+from plotly.subplots import make_subplots
 import pandas as pd  # pip install openpyxl
+import plotly.express as px  # pip install plotly-express
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime
+from datetime import date
+from datetime import datetime, timedelta
 import streamlit as st  # pip install streamlit
+from streamlit_autorefresh import st_autorefresh  # pip install streamlit_autorefresh
+import streamlit_authenticator as stauth
+from streamlit_option_menu import option_menu  # pip install streamlit_option_menu
+import pickle
+from streamlit_card import card
 import base64
+from PIL import Image
+from plotly.graph_objects import Figure
 import os
 import streamlit.components.v1 as components
 
@@ -20,7 +32,7 @@ today = datetime.today().strftime('%d-%b-%Y %H:%M:%S')
 st.sidebar.info(f'🗓️ updated {today}')
 
 # Faylların yerləşdiyi qovluq yolu
-DATA_FOLDER = os.path.dirname(os.path.abspath(__file__))
+DATA_FOLDER = r'C:\Users\009688\Desktop\MXSPerformance'
 
 @st.cache_data
 def load_single_excel(file_name):
@@ -127,7 +139,6 @@ def all_list():
 
 branch, data_types = all_list()
 
-@st.cache_data(ttl=60)
 def get_date_range():
     curr = datetime.today()
     start_date = datetime(curr.year, 1, 1)
@@ -145,7 +156,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-@st.cache_data
 def get_image_base64(image_path):
     with open(image_path, "rb") as img_file:
         encoded = base64.b64encode(img_file.read()).decode()
@@ -187,45 +197,37 @@ with col_3:
 # ==========================================
 def branch_review():
     col1, col2, col3, col4, col5, space, col6, col7 = st.columns([0.6, 0.35, 0.6, 0.35, 0.5, 0.2, 0.5, 1.8])
-    branch_manager_rows = Branch_manager[Branch_manager['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)
-    supervisor_rows = Supervisor[Supervisor['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)
-    manager_row = branch_manager_rows.iloc[0] if not branch_manager_rows.empty else pd.Series({
-        'Branch_manager': '-', 'Team_lead1': '-', 'Team_lead2': '-'
-    })
-    supervisor_row = supervisor_rows.iloc[0] if not supervisor_rows.empty else pd.Series({
-        'Supervisor': '-', 'Member1': '-', 'Member2': '-', 'Koordinator': '-'
-    })
   
     with col1:
-        manager_name = manager_row['Branch_manager']
+        manager_name = Branch_manager[Branch_manager['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)['Branch_manager'].iloc[0]
         st.text('Branch Manager')
         path = f"Photos/{manager_name}.jpg" if os.path.exists(f"Photos/{manager_name}.jpg") else "Photos/Default.jpg"
         create_custom_card(path, manager_name, 150, 210, 18)
     
     with col2:
         st.text('Team Lead')
-        tl1 = manager_row['Team_lead1']
-        tl2 = manager_row['Team_lead2']
+        tl1 = Branch_manager[Branch_manager['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)['Team_lead1'].iloc[0]
+        tl2 = Branch_manager[Branch_manager['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)['Team_lead2'].iloc[0]
         for tl in [tl1, tl2]:
             path = f"Photos/{tl}.jpg" if os.path.exists(f"Photos/{tl}.jpg") else "Photos/Default.jpg"
             create_custom_card(path, tl, 73, 102.2, 10)
 
     with col3:
-        supervisor_name = supervisor_row['Supervisor']
+        supervisor_name = Supervisor[Supervisor['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)['Supervisor'].iloc[0]
         st.text('Supervisor')
         path = f"Photos/{supervisor_name}.jpg" if os.path.exists(f"Photos/{supervisor_name}.jpg") else "Photos/Default.jpg"
         create_custom_card(path, supervisor_name, 150, 210, 18)
     
     with col4:
         st.text('Member')
-        m1 = supervisor_row['Member1']
-        m2 = supervisor_row['Member2']
+        m1 = Supervisor[Supervisor['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)['Member1'].iloc[0]
+        m2 = Supervisor[Supervisor['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)['Member2'].iloc[0]
         for mb in [m1, m2]:
             path = f"Photos/{mb}.jpg" if os.path.exists(f"Photos/{mb}.jpg") else "Photos/Default.jpg"
             create_custom_card(path, mb, 73, 102.2, 10)
 
     with col5:
-        coordinator = supervisor_row['Koordinator']
+        coordinator = Supervisor[Supervisor['MXS_name'] == branch_name].sort_values(by='Date', ascending=False)['Koordinator'].iloc[0]
         st.text('Coordinator')
         path = f"Photos/{coordinator}.jpg" if os.path.exists(f"Photos/{coordinator}.jpg") else "Photos/Default.jpg"
         create_custom_card(path, coordinator, 150, 210, 18)
@@ -1600,11 +1602,18 @@ def branch_review_employee_stats():
             ex_df['clean_rub'] = ex_df[ex_rub_col].astype(str).str.strip()
             ex_df['clean_score'] = ex_df[ex_score_col].apply(clean_val)
 
-            # İl üzrə rübləri bir sətirdə birləşdiririk: "2025: Q1 25% Q2 30% Q3 35% Q4 50%"
+            # İl üzrə rübləri Q1-dən Q4-ə qədər sıralayıb ayrıca HTML sətrinə çeviririk
             def group_quarters(group):
+                quarter_order = {'Q1': 1, 'Q2': 2, 'Q3': 3, 'Q4': 4}
+                group = group.sort_values(
+                    by='clean_rub',
+                    key=lambda values: values.map(
+                        lambda value: quarter_order.get(str(value).strip().upper(), 99)
+                    )
+                )
                 q_list = [f"{row['clean_rub']} {row['clean_score']}" for _, row in group.iterrows()]
                 yr = group['clean_yr'].iloc[0]
-                return f"<div style='margin-bottom:2px;'><strong>{yr}:</strong> {' '.join(q_list)}</div>"
+                return f"<div><strong>{yr}:</strong> {' '.join(q_list)}</div>"
 
             year_grouped = ex_df.groupby([ex_emp_col, 'clean_yr']).apply(group_quarters).reset_index(name='Year_Line')
 
@@ -1824,5 +1833,107 @@ def branch_review_employee_stats():
     calc_height = max(250, (total_rows + 1) * 55)
     components.html(custom_component, height=calc_height, scrolling=True)
 
+
+# =============================================================
+# İMTAHAN NƏTİCƏLƏRİ (BİRBAŞA 'İmtahan' DƏYİŞƏNİ İLƏ)
+# =============================================================
+
+if 'İmtahan' in globals() and not İmtahan.empty:
+    ex_df = İmtahan.copy()
+    ex_df.columns = ex_df.columns.astype(str).str.strip()
+
+    # Sütun adlarını dəqiq tapmaq üçün köməkçi funksiya
+    def get_col(possible_names):
+        for c in ex_df.columns:
+            clean_c = str(c).strip().lower().replace('i̇', 'i').replace('ı', 'i').replace('ə', 'e')
+            if any(p in clean_c for p in possible_names):
+                return c
+        return None
+
+    ex_emp_col = get_col(['employee', 'əməkdaş', 'emekdas', 'user', 'staff'])
+    ex_year_col = get_col(['il', 'year'])
+    ex_rub_col = get_col(['rub', 'quarter', 'rüb'])
+    ex_score_col = get_col(['netice', 'neticə', 'imtahan', 'score', 'bal'])
+    ex_mxs_col = get_col(['mxs_name', 'mxs', 'filial', 'branch'])
+
+    if ex_emp_col and ex_year_col and ex_rub_col and ex_score_col:
+        
+        # Filial filtri (Noqsan koddakı kimi branch_name dəyişəninə əsasən)
+        if ex_mxs_col and 'branch_name' in globals() and branch_name:
+            e_mask = ex_df[ex_mxs_col].astype(str).str.strip().str.lower() == str(branch_name).strip().lower()
+            ex_filtered = ex_df.loc[e_mask].copy()
+        else:
+            ex_filtered = ex_df.copy()
+
+        # Faiz / Qiyməti formatlayıcı (məsələn: 0.25 -> 25%)
+        def format_score(val):
+            if pd.isna(val) or str(val).strip() in ['', '-', 'nan', 'None']:
+                return ""
+            val_str = str(val).strip().replace('%', '').replace(',', '.')
+            try:
+                num_val = float(val_str)
+                if 0 < num_val <= 1.0:
+                    return f"{int(round(num_val * 100))}%"
+                else:
+                    return f"{int(round(num_val))}%"
+            except:
+                return str(val).strip()
+
+        # Əməkdaş adındakı fərqləri (ə/e, ı/i, oğlu, qızı) aradan qaldıran funksiya
+        def clean_name(val):
+            if pd.isna(val): return ""
+            s = str(val).strip().lower()
+            char_map = {'ə': 'e', 'ı': 'i', 'i̇': 'i', 'ö': 'o', 'ü': 'u', 'ğ': 'g', 'ç': 'c', 'ş': 's'}
+            for k, v in char_map.items():
+                s = s.replace(k, v)
+            for stop_word in ['oglu', 'qizi', 'oğlu', 'qızı']:
+                s = s.replace(stop_word, '')
+            return "".join([c for c in s if c.isalpha()])
+
+        ex_filtered['clean_emp'] = ex_filtered[ex_emp_col].apply(clean_name)
+        ex_filtered['clean_yr'] = ex_filtered[ex_year_col].astype(str).str.strip().str.split('.').str[0]
+        ex_filtered['clean_rub'] = ex_filtered[ex_rub_col].astype(str).str.strip()
+        ex_filtered['clean_score'] = ex_filtered[ex_score_col].apply(format_score)
+
+        # Məlumatları qruplayıb "2025 Q1-25% Q2-15%" şəklində yığırıq
+        exam_dict = {}
+        for clean_emp, group in ex_filtered.groupby('clean_emp'):
+            if not clean_emp: continue
+            year_lines = []
+            
+            for yr, yr_group in group.groupby('clean_yr'):
+                q_items = []
+                for _, r in yr_group.iterrows():
+                    score = r['clean_score']
+                    if score:
+                        q_items.append(f"{r['clean_rub']}-{score}")
+                
+                if q_items:
+                    year_lines.append(f"{yr} " + " ".join(q_items))
+            
+            if year_lines:
+                exam_dict[clean_emp] = "\n".join(year_lines)
+
+        # Əsas cədvələ uyğunlaşdıran funksiya
+        def get_exam_result(staff_name):
+            c_name = clean_name(staff_name)
+            if not c_name:
+                return "-"
+            
+            # 1. Tam ad uyğunluğu
+            if c_name in exam_dict:
+                return exam_dict[c_name]
+            
+            # 2. Hissəvi (Ad/Soyad) uyğunluq
+            for dict_emp_name, result_text in exam_dict.items():
+                if len(c_name) > 4 and (c_name in dict_emp_name or dict_emp_name in c_name):
+                    return result_text
+            
+            return "-"
+
+        # Nəticəni cədvələ yazırıq
+        if 'current_stf' in globals() and 'Staff' in current_stf.columns:
+            current_stf['Exam_Result'] = current_stf['Staff'].apply(get_exam_result)
+            current_stf['Exam_Result'] = current_stf['Exam_Result'].fillna("-")
 
 branch_review_employee_stats()
